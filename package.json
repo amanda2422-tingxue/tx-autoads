@@ -1,0 +1,19 @@
+{
+  "name": "autoads-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Facebook 广告自动化平台 - 基于 Smartly.io 架构参考",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "db:migrate": "pnpm --filter database migrate",
+    "db:generate": "pnpm --filter database generate",
+    "db:studio": "pnpm --filter database studio"
+  },
+  "devDependencies": {
+    "turbo": "^1.11.0"
+  },
+  "packageManager": "pnpm@8.12.0"
+}
