@@ -1,14 +1,6 @@
+import { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { Layout, Menu } from 'antd'
-import {
-  DashboardOutlined,
-  PictureOutlined,
-  RocketOutlined,
-  BarChartOutlined,
-  ThunderboltOutlined,
-  SettingOutlined,
-} from '@ant-design/icons'
-import type { MenuProps } from 'antd'
+import { Layout } from 'antd'
 import Sidebar from './components/layout/Sidebar'
 import Header from './components/layout/Header'
 import Dashboard from './pages/Dashboard'
@@ -18,54 +10,29 @@ import Performance from './pages/Performance'
 import Rules from './pages/Rules'
 import Settings from './pages/Settings'
 
-const { Sider, Content } = Layout
-
-const menuItems: MenuProps['items'] = [
-  {
-    key: 'dashboard',
-    icon: <DashboardOutlined />,
-    label: '数据看板',
-    path: '/',
-  },
-  {
-    key: 'creatives',
-    icon: <PictureOutlined />,
-    label: '素材库',
-    path: '/creatives',
-  },
-  {
-    key: 'campaigns',
-    icon: <RocketOutlined />,
-    label: '广告活动',
-    path: '/campaigns',
-  },
-  {
-    key: 'performance',
-    icon: <BarChartOutlined />,
-    label: '数据分析',
-    path: '/performance',
-  },
-  {
-    key: 'rules',
-    icon: <ThunderboltOutlined />,
-    label: '自动化规则',
-    path: '/rules',
-  },
-  {
-    key: 'settings',
-    icon: <SettingOutlined />,
-    label: '设置',
-    path: '/settings',
-  },
-]
+const { Content } = Layout
 
 function App() {
+  const [collapsed, setCollapsed] = useState(false)
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sidebar menuItems={menuItems} />
-      <Layout>
-        <Header />
-        <Content style={{ margin: '16px' }}>
+      <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+      <Layout
+        style={{
+          marginLeft: 0,
+          transition: 'all 0.2s',
+        }}
+      >
+        <Header collapsed={collapsed} setCollapsed={setCollapsed} />
+        <Content
+          style={{
+            margin: '16px',
+            padding: '24px',
+            background: '#f5f5f5',
+            minHeight: 'calc(100vh - 64px - 32px)',
+          }}
+        >
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/creatives" element={<Creatives />} />
