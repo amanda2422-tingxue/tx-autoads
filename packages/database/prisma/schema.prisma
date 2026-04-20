@@ -1,0 +1,487 @@
+// AutoAds Platform - Database Schema
+// 基于 PRD v2.0 设计
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 核心表 ====================
+
+// M1: 素材库 - 素材表
+model Creative {
+  id              String   @id @default(uuid())
+  metaCreativeId  String?  @unique @map("meta_creative_id") // Meta API 返回的创意ID
+  name            String
+  
+  // 素材类型 (image, video, carousel)
+  type            CreativeType
+  
+  // 素材状态生命周期 (draft, pending, active, paused, archived)
+  status          CreativeStatus @default(draft)
+  
+  // 文件信息
+  fileUrl         String   @map("file_url")
+  fileHash        String?  @map("file_hash") // 用于去重
+  fileSize        Int?     @map("file_size")
+  width           Int?
+  height          Int?
+  duration        Float?   // 视频时长(秒)
+  
+  // 素材评分模型 (参考 Smartly Creative Predictive Potential)
+  score           Float?   // 综合评分 0-100
+  scoreFactors    Json?    @map("score_factors") // 评分因子详情
+  
+  // 文案内容
+  primaryText     String?  @map("primary_text")
+  headline        String?
+  description     String?
+  callToAction    String?  @map("call_to_action")
+  
+  // 关联
+  adAccounts      AdAccountCreative[]
+  ads             Ad[]
+  variations      CreativeVariation[]
+  
+  // 元数据
+  tags            String[] // 标签
+  labels          String[] // 标签分类
+  
+  // 时间戳
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  uploadedAt      DateTime? @map("uploaded_at") // 上传到 Meta 的时间
+  
+  @@map("creatives")
+  @@index([status])
+  @@index([score])
+  @@index([type])
+}
+
+// M1: 素材变体 (用于 M5 文案迭代)
+model CreativeVariation {
+  id              String   @id @default(uuid())
+  creativeId      String   @map("creative_id")
+  creative        Creative @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  
+  // 变体类型 (copy, image, combination)
+  variationType   String   @map("variation_type")
+  
+  // 变体内容
+  primaryText     String?  @map("primary_text")
+  headline        String?
+  description     String?
+  
+  // 变体状态
+  status          String   @default("testing") // testing, winner, loser
+  
+  // 测试数据
+  testStartAt     DateTime? @map("test_start_at")
+  testEndAt       DateTime? @map("test_end_at")
+  testImpressions Int?     @map("test_impressions")
+  testClicks      Int?     @map("test_clicks")
+  testSpend       Float?   @map("test_spend")
+  testCpa         Float?   @map("test_cpa")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  
+  @@map("creative_variations")
+  @@index([creativeId])
+}
+
+// M2: 广告任务表
+model AdCampaign {
+  id              String   @id @default(uuid())
+  metaCampaignId  String?  @unique @map("meta_campaign_id")
+  
+  // 基本信息
+  name            String
+  objective       String   // 广告目标 (CONVERSIONS, TRAFFIC, etc.)
+  status          CampaignStatus @default(draft)
+  
+  // 预算设置
+  budgetType      String   @map("budget_type") // daily, lifetime
+  budgetAmount    Float    @map("budget_amount")
+  budgetCurrency  String   @default("USD") @map("budget_currency")
+  
+  // 时间设置
+  startDate       DateTime @map("start_date")
+  endDate         DateTime? @map("end_date")
+  
+  // 关联
+  adAccountId     String   @map("ad_account_id")
+  adAccount       AdAccount @relation(fields: [adAccountId], references: [id])
+  adSets          AdSet[]
+  
+  // 自动化标记
+  isAutoCreated   Boolean  @default(false) @map("is_auto_created")
+  autoRules       CampaignRule[]
+  
+  // 国家雷达 M7
+  countryRadarConfig Json? @map("country_radar_config")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  @@map("ad_campaigns")
+  @@index([status])
+  @@index([adAccountId])
+}
+
+// 广告组表 (AdSet)
+model AdSet {
+  id              String   @id @default(uuid())
+  metaAdSetId     String?  @unique @map("meta_adset_id")
+  
+  name            String
+  status          AdSetStatus @default(draft)
+  
+  // 归属
+  campaignId      String   @map("campaign_id")
+  campaign        AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  // 受众设置
+  targeting       Json?    // 受众配置 JSON
+  audienceTemplate String? @map("audience_template") // MVP 固定3个模板名称
+  
+  // 版位
+  placements      String[] // facebook, instagram, messenger, etc.
+  
+  // 预算
+  budgetAmount    Float?   @map("budget_amount")
+  bidStrategy     String?  @map("bid_strategy")
+  
+  // 优化目标
+  optimizationGoal String  @map("optimization_goal")
+  billingEvent    String   @map("billing_event")
+  
+  // 广告
+  ads             Ad[]
+  
+  // M7: 国家雷达 - 监测组/跑量组标记
+  radarType       String?  @map("radar_type") // monitor, scaling, null
+  countryCode     String?  @map("country_code") // 国家代码
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  @@map("ad_sets")
+  @@index([campaignId])
+  @@index([status])
+  @@index([radarType])
+}
+
+// 广告表 (Ad)
+model Ad {
+  id              String   @id @default(uuid())
+  metaAdId        String?  @unique @map("meta_ad_id")
+  
+  name            String
+  status          AdStatus @default(draft)
+  
+  // 归属
+  adSetId         String   @map("adset_id")
+  adSet           AdSet    @relation(fields: [adSetId], references: [id], onDelete: Cascade)
+  
+  // 素材关联
+  creativeId      String   @map("creative_id")
+  creative        Creative @relation(fields: [creativeId], references: [id])
+  
+  // 落地页
+  urlParameters   String?  @map("url_parameters")
+  
+  // M6: 头部素材标记
+  isTopCreative   Boolean  @default(false) @map("is_top_creative")
+  topCreativeRank Int?     @map("top_creative_rank")
+  
+  // 衍生关系 (M6 自动迭代)
+  parentAdId      String?  @map("parent_ad_id")
+  iterationCount  Int      @default(0) @map("iteration_count")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  @@map("ads")
+  @@index([adSetId])
+  @@index([creativeId])
+  @@index([status])
+}
+
+// M3: 表现数据表
+model AdPerformance {
+  id              String   @id @default(uuid())
+  
+  // 数据层级
+  level           String   // campaign, adset, ad
+  metaObjectId    String   @map("meta_object_id")
+  
+  // 时间维度
+  date            DateTime
+  hour            Int?     // 小时级数据(可选)
+  
+  // 花费
+  spend           Float
+  currency        String   @default("USD")
+  
+  // 展示与点击
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  ctr             Float?   // 点击率
+  
+  // 转化
+  conversions     Int      @default(0)
+  cpa             Float?   // 单次转化成本
+  
+  // 收益 (如有)
+  revenue         Float?   // 收入
+  roas            Float?   // 广告支出回报率
+  
+  // 其他指标
+  cpc             Float?   // 单次点击成本
+  cpm             Float?   // 千次展示成本
+  frequency       Float?   // 频次
+  reach           Int?     // 触达人数
+  
+  // 关联
+  campaignId      String?  @map("campaign_id")
+  adSetId         String?  @map("adset_id")
+  adId            String?  @map("ad_id")
+  
+  // 原始数据备份
+  rawData         Json?    @map("raw_data")
+  
+  // 同步时间
+  syncedAt        DateTime @default(now()) @map("synced_at")
+  
+  @@map("ad_performance")
+  @@index([date])
+  @@index([level])
+  @@index([metaObjectId])
+  @@index([campaignId])
+  @@index([adSetId])
+  @@index([adId])
+  @@unique([level, metaObjectId, date, hour])
+}
+
+// M4: 规则引擎 - 自动化规则表
+model AutomationRule {
+  id              String   @id @default(uuid())
+  
+  name            String
+  description     String?
+  
+  // 规则状态
+  status          RuleStatus @default(draft)
+  isActive        Boolean  @default(false) @map("is_active")
+  
+  // 规则类型 (budget, bid, status, notification)
+  ruleType        String   @map("rule_type")
+  
+  // 应用范围
+  applyTo         String   @map("apply_to") // campaign, adset, ad
+  targetIds       String[] @map("target_ids") // 应用到的对象ID列表
+  
+  // 触发条件 (JSON 格式)
+  conditions      Json     // 触发条件配置
+  conditionLogic  String   @default("AND") @map("condition_logic") // AND/OR
+  
+  // 执行动作
+  actions         Json     // 执行动作配置
+  
+  // 执行限制
+  maxExecutions   Int?     @map("max_executions") // 最大执行次数
+  executionCount  Int      @default(0) @map("execution_count")
+  cooldownMinutes Int      @default(60) @map("cooldown_minutes") // 冷却时间
+  
+  // 通知设置
+  notifyEmails    String[] @map("notify_emails")
+  notifySlack     String?  @map("notify_slack") // Slack webhook
+  
+  // 执行日志
+  executionLogs   RuleExecutionLog[]
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  @@map("automation_rules")
+  @@index([status])
+  @@index([ruleType])
+  @@index([isActive])
+}
+
+// 规则执行日志
+model RuleExecutionLog {
+  id              String   @id @default(uuid())
+  
+  ruleId          String   @map("rule_id")
+  rule            AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  
+  // 执行信息
+  executedAt      DateTime @default(now()) @map("executed_at")
+  status          String   // success, failed, skipped
+  
+  // 触发时的数据
+  triggerData     Json?    @map("trigger_data")
+  
+  // 执行的动作
+  actionsTaken    Json?    @map("actions_taken")
+  
+  // 错误信息
+  errorMessage    String?  @map("error_message")
+  
+  // 人工确认
+  reviewedAt      DateTime? @map("reviewed_at")
+  reviewedBy      String?  @map("reviewed_by")
+  
+  @@map("rule_execution_logs")
+  @@index([ruleId])
+  @@index([executedAt])
+}
+
+// ==================== 辅助表 ====================
+
+// 广告账户表
+model AdAccount {
+  id              String   @id @default(uuid())
+  metaAccountId   String   @unique @map("meta_account_id")
+  
+  name            String
+  status          String   @default("active")
+  
+  // 账户设置
+  currency        String   @default("USD")
+  timezone        String   @default("America/New_York")
+  
+  // 关联
+  campaigns       AdCampaign[]
+  creatives       AdAccountCreative[]
+  
+  // API Token (加密存储)
+  accessToken     String?  @map("access_token")
+  tokenExpiresAt  DateTime? @map("token_expires_at")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  @@map("ad_accounts")
+}
+
+// 广告账户与素材多对多关系
+model AdAccountCreative {
+  id              String   @id @default(uuid())
+  
+  adAccountId     String   @map("ad_account_id")
+  adAccount       AdAccount @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  
+  creativeId      String   @map("creative_id")
+  creative        Creative @relation(fields: [creativeId], references: [id], onDelete: Cascade)
+  
+  metaAssetId     String?  @map("meta_asset_id") // Meta 上的资源ID
+  
+  @@unique([adAccountId, creativeId])
+  @@map("ad_account_creatives")
+}
+
+// 活动与规则关联
+model CampaignRule {
+  id              String   @id @default(uuid())
+  
+  campaignId      String   @map("campaign_id")
+  campaign        AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  ruleId          String   @map("rule_id")
+  
+  @@unique([campaignId, ruleId])
+  @@map("campaign_rules")
+}
+
+// 定时任务记录 (Job Scheduler)
+model ScheduledJob {
+  id              String   @id @default(uuid())
+  
+  name            String   @unique
+  description     String?
+  
+  // 任务类型
+  jobType         String   @map("job_type") // sync_data, check_rules, etc.
+  
+  // Cron 表达式
+  cronExpression  String   @map("cron_expression")
+  
+  // 状态
+  isActive        Boolean  @default(true) @map("is_active")
+  lastRunAt       DateTime? @map("last_run_at")
+  nextRunAt       DateTime? @map("next_run_at")
+  
+  // 执行统计
+  runCount        Int      @default(0) @map("run_count")
+  successCount    Int      @default(0) @map("success_count")
+  failCount       Int      @default(0) @map("fail_count")
+  
+  // 最后执行结果
+  lastResult      Json?    @map("last_result")
+  lastError       String?  @map("last_error")
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  @@map("scheduled_jobs")
+}
+
+// ==================== 枚举类型 ====================
+
+enum CreativeType {
+  image
+  video
+  carousel
+  collection
+}
+
+enum CreativeStatus {
+  draft       // 草稿
+  pending     // 待上传
+  uploading   // 上传中
+  active      // 可用
+  paused      // 暂停
+  archived    // 归档
+  error       // 错误
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  active
+  paused
+  ended
+  archived
+}
+
+enum AdSetStatus {
+  draft
+  scheduled
+  active
+  paused
+  ended
+  archived
+}
+
+enum AdStatus {
+  draft
+  scheduled
+  active
+  paused
+  ended
+  archived
+  disapproved
+}
+
+enum RuleStatus {
+  draft
+  active
+  paused
+  archived
+}
