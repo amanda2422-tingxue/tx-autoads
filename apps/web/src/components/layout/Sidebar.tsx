@@ -1,52 +1,19 @@
-import React, { useState } from 'react'
-import { Layout, Menu, Button } from 'antd'
+import React from 'react'
+import { Layout, Menu } from 'antd'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   DashboardOutlined,
   PictureOutlined,
   RocketOutlined,
   BarChartOutlined,
   ThunderboltOutlined,
   SettingOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
+import { useAuth } from '../../contexts/AuthContext'
 
 const { Sider } = Layout
-
-const menuItems: MenuProps['items'] = [
-  {
-    key: 'dashboard',
-    icon: <DashboardOutlined />,
-    label: '数据看板',
-  },
-  {
-    key: 'creatives',
-    icon: <PictureOutlined />,
-    label: '素材库',
-  },
-  {
-    key: 'campaigns',
-    icon: <RocketOutlined />,
-    label: '广告活动',
-  },
-  {
-    key: 'performance',
-    icon: <BarChartOutlined />,
-    label: '数据分析',
-  },
-  {
-    key: 'rules',
-    icon: <ThunderboltOutlined />,
-    label: '自动化规则',
-  },
-  {
-    key: 'settings',
-    icon: <SettingOutlined />,
-    label: '设置',
-  },
-]
 
 interface SidebarProps {
   collapsed: boolean
@@ -56,13 +23,71 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user, hasRole } = useAuth()
+
+  // 根据角色动态构建菜单
+  const menuItems: MenuProps['items'] = React.useMemo(() => {
+    const items: MenuProps['items'] = [
+      {
+        key: 'dashboard',
+        icon: <DashboardOutlined />,
+        label: '数据看板',
+      },
+      {
+        key: 'creatives',
+        icon: <PictureOutlined />,
+        label: '素材库',
+      },
+    ]
+
+    // 优化师和管理员可以看到广告活动
+    if (hasRole('admin', 'optimizer')) {
+      items.push({
+        key: 'campaigns',
+        icon: <RocketOutlined />,
+        label: '广告活动',
+      })
+    }
+
+    items.push({
+      key: 'performance',
+      icon: <BarChartOutlined />,
+      label: '数据分析',
+    })
+
+    // 优化师和管理员可以看到自动化规则
+    if (hasRole('admin', 'optimizer')) {
+      items.push({
+        key: 'rules',
+        icon: <ThunderboltOutlined />,
+        label: '自动化规则',
+      })
+    }
+
+    // 管理员可以看到用户管理
+    if (hasRole('admin')) {
+      items.push({
+        key: 'users',
+        icon: <TeamOutlined />,
+        label: '用户管理',
+      })
+    }
+
+    items.push({
+      key: 'settings',
+      icon: <SettingOutlined />,
+      label: '设置',
+    })
+
+    return items
+  }, [user, hasRole])
 
   // 根据当前路径设置选中的菜单项
   const selectedKeys = React.useMemo(() => {
     const path = location.pathname
     if (path === '/') return ['dashboard']
-    const key = path.slice(1)
-    return [key]
+    const segment = path.slice(1).split('/')[0]
+    return [segment]
   }, [location.pathname])
 
   const handleMenuClick: MenuProps['onClick'] = (e) => {
@@ -72,6 +97,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => {
       campaigns: '/campaigns',
       performance: '/performance',
       rules: '/rules',
+      users: '/users',
       settings: '/settings',
     }
     const path = pathMap[e.key]

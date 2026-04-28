@@ -63,3 +63,9 @@ body {
 .ant-table-cell .ant-tag {
   margin: 0;
 }
+
+/* 创建广告进度条动画 */
+@keyframes loadingBar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}

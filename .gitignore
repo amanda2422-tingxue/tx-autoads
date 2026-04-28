@@ -42,3 +42,17 @@ temp/
 
 # Prisma
 packages/database/prisma/migrations/
+
+# Build cache
+.turbo/
+
+# npm lockfile (project uses pnpm)
+package-lock.json
+apps/*/package-lock.json
+
+# Uploaded user files
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep
+
+# OS artifacts
+nul

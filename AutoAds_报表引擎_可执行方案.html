@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>AutoAds 动态报表引擎 — 可直接执行方案</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f9f9f9; color: #333; padding: 20px; line-height: 1.7; }
+
+.tab-bar { display:flex; gap:0; border-bottom:1px solid #e0e0e0; margin-bottom:20px; flex-wrap:wrap; }
+.tab { padding:10px 16px; font-size:13px; cursor:pointer; border:none; background:none; border-bottom:2px solid transparent; color:#666; }
+.tab.active { color:#1E3A5F; border-bottom-color:#1E3A5F; font-weight:600; }
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+
+.section-label { font-size:11px; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:.05em; margin:24px 0 10px; }
+
+.insight-box { padding:10px 14px; border-radius:8px; margin-bottom:12px; font-size:12px; line-height:1.6; }
+.ib-info { background:#eff6ff; border-left:3px solid #3b82f6; }
+.ib-good { background:#f0fdf4; border-left:3px solid #22c55e; }
+.ib-warn { background:#fffbeb; border-left:3px solid #f59e0b; }
+.ib-title { font-weight:600; color:#222; margin-bottom:3px; font-size:13px; }
+
+.code-block { background:#1e293b; color:#e2e8f0; border-radius:8px; padding:14px 16px; font-family:monospace; font-size:12px; line-height:1.8; margin-bottom:12px; overflow-x:auto; white-space:pre; }
+.code-block .kw { color:#7dd3fc; }
+.code-block .fn { color:#86efac; }
+.code-block .str { color:#fde68a; }
+.code-block .cm { color:#64748b; }
+
+.step-list { list-style:none; }
+.step-item { display:flex; gap:10px; padding:9px 0; border-bottom:1px solid #f5f5f5; font-size:12px; align-items:flex-start; }
+.step-item:last-child { border-bottom:none; }
+.step-num { width:22px; height:22px; border-radius:50%; background:#dbeafe; color:#1d4ed8; font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+.step-text { color:#555; line-height:1.6; }
+.step-text strong { color:#222; }
+
+.arch-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px; }
+.arch-card { border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; background:#fff; }
+.arch-title { font-size:13px; font-weight:600; color:#1E3A5F; margin-bottom:8px; }
+.arch-row { font-size:12px; color:#555; padding:4px 0; border-bottom:1px solid #f5f5f5; display:flex; gap:6px; }
+
+.dim-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:16px; }
+.dim-card { background:#f8faff; border:1px solid #dbeafe; border-radius:8px; padding:10px 14px; }
+.dim-name { font-size:13px; font-weight:600; color:#1E3A5F; margin-bottom:4px; }
+.dim-field { font-family:monospace; font-size:11px; color:#6b7280; margin-bottom:4px; }
+.dim-note { font-size:11px; color:#888; }
+
+.report-card { border:1px solid #e5e7eb; border-radius:10px; margin-bottom:12px; overflow:hidden; }
+.report-header { padding:10px 14px; background:#f9fafb; display:flex; align-items:center; gap:10px; }
+.report-tag { font-size:10px; font-weight:600; padding:2px 7px; border-radius:3px; background:#ede9fe; color:#6d28d9; }
+.report-name { font-size:13px; font-weight:600; color:#1E3A5F; }
+.report-body { padding:10px 14px; font-size:12px; color:#555; }
+.report-dims { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0; }
+.dim-pill { background:#dbeafe; color:#1d4ed8; font-size:11px; padding:2px 8px; border-radius:20px; }
+.metric-pill { background:#dcfce7; color:#166534; font-size:11px; padding:2px 8px; border-radius:20px; }
+
+h2 { font-size:18px; color:#1E3A5F; margin:24px 0 12px; }
+h3 { font-size:14px; color:#333; margin:16px 0 8px; }
+
+.copy-hint { font-size:11px; color:#888; margin-bottom:6px; }
+</style>
+</head>
+<body>
+
+<div class="tab-bar">
+  <button class="tab active" onclick="showTab('arch')">架构与改动清单</button>
+  <button class="tab" onclick="showTab('schema')">Schema 修改</button>
+  <button class="tab" onclick="showTab('backend')">后端代码</button>
+  <button class="tab" onclick="showTab('frontend')">前端代码</button>
+  <button class="tab" onclick="showTab('seed')">Seed 与部署</button>
+</div>
+
+<!-- ========== TAB 1: 架构 ========== -->
+<div id="arch" class="tab-panel active">
+
+<div class="insight-box ib-good">
+<div class="ib-title">核心调整：所有字段严格对齐现有 Prisma Schema</div>
+原方案引用了大量不存在的字段（如 ad_performance.country_code、ad_campaigns.creative_id 等）。本方案已逐一对齐到你们当前的数据库结构，代码可直接复制使用。
+</div>
+
+<h2>改动清单（共 4 处）</h2>
+<div class="step-list">
+  <div class="step-item"><div class="step-num">1</div><div class="step-text"><strong>Prisma Schema</strong> — 新增 saved_reports 表；给 AdPerformance 加复合索引 (level, date)。</div></div>
+  <div class="step-item"><div class="step-num">2</div><div class="step-text"><strong>后端</strong> — 新增 apps/api/src/routes/reports.ts（动态 SQL 查询引擎 + 保存报表 API + CSV 导出）。</div></div>
+  <div class="step-item"><div class="step-num">3</div><div class="step-text"><strong>前端</strong> — 新增 apps/web/src/pages/Reports.tsx（维度/指标选择器 + 表格 + 保存报表）。</div></div>
+  <div class="step-item"><div class="step-num">4</div><div class="step-text"><strong>路由注册</strong> — 在 app.ts 中注册 /api/reports 路由；前端路由加 /reports 页面。</div></div>
+</div>
+
+<h2>维度与指标的 Schema 对应关系（修正后）</h2>
+<div class="dim-grid">
+  <div class="dim-card">
+    <div class="dim-name">日期</div>
+    <div class="dim-field">ad_performance.date</div>
+    <div class="dim-note">直接可用，所有查询自动限定 level='ad'</div>
+  </div>
+  <div class="dim-card">
+    <div class="dim-name">国家</div>
+    <div class="dim-field">ad_sets.country_code</div>
+    <div class="dim-note">需 LEFT JOIN ad_sets ON ap.adset_id = a_s.id</div>
+  </div>
+  <div class="dim-card">
+    <div class="dim-name">素材</div>
+    <div class="dim-field">ads.creative_id → creatives.name</div>
+    <div class="dim-note">需 LEFT JOIN ads + creatives。只取 level='ad' 数据</div>
+  </div>
+  <div class="dim-card">
+    <div class="dim-name">广告活动</div>
+    <div class="dim-field">ad_campaigns.name</div>
+    <div class="dim-note">需 LEFT JOIN ad_campaigns ON ap.campaign_id = ac.id</div>
+  </div>
+  <div class="dim-card">
+    <div class="dim-name">广告组</div>
+    <div class="dim-field">ad_sets.name</div>
+    <div class="dim-note">需 LEFT JOIN ad_sets</div>
+  </div>
+  <div class="dim-card">
+    <div class="dim-name">受众模板</div>
+    <div class="dim-field">ad_sets.audience_template</div>
+    <div class="dim-note">String 类型，无需额外表</div>
+  </div>
+  <div class="dim-card">
+    <div class="dim-name">广告组类型</div>
+    <div class="dim-field">ad_sets.radar_type</div>
+    <div class="dim-note">monitor / scaling / null，M7 国家雷达专用</div>
+  </div>
+</div>
+
+<div class="insight-box ib-warn">
+<div class="ib-title">⚠️ 关于数据层级 level='ad' 的统一策略</div>
+所有报表查询统一使用 ad_performance 中 level='ad' 的最细粒度数据，通过 JOIN 向上聚合到 campaign/adset 层级。这样保证：按国家分组时不会混入 campaign 级无国家信息的汇总数据；按素材分组时不会混入 adset 级无素材信息的数据。如果后续发现 ad level 数据缺失，再扩展为按维度自动选择 level。
+</div>
+
+<h2>指标定义（12 个）</h2>
+<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+<tr style="background:#f5f5f5;"><th style="padding:7px 10px;text-align:left;border-bottom:1px solid #e0e0e0;">指标</th><th style="padding:7px 10px;text-align:left;border-bottom:1px solid #e0e0e0;">SQL 公式</th><th style="padding:7px 10px;text-align:left;border-bottom:1px solid #e0e0e0;">说明</th></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">spend</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">SUM(spend)</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">总花费 USD</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">conversions</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">SUM(conversions)</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">问卷完成数</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">clicks</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">SUM(clicks)</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">点击数</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">impressions</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">SUM(impressions)</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">展示数</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">ctr</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">clicks/impressions×100</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">点击率(%)</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">cvr</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">conversions/clicks×100</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">转化率(%)</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">cpc</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">spend/clicks</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">点击成本</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">cpm</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">spend/impressions×1000</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">千次展示成本</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">frequency</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">AVG(frequency)</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">平均频次</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">cpa</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">spend/conversions</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">单次转化成本</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">epc</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">payout × cvr</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">需 country 维度，JOIN benchmarks</td></tr>
+<tr><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">roas</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;font-family:monospace;">payout×conv/spend×100</td><td style="padding:7px 10px;border-bottom:1px solid #f0f0f0;">>100%盈利，需 country 维度</td></tr>
+</table>
+
+</div>
+
+<!-- ========== TAB 2: Schema ========== -->
+<div id="schema" class="tab-panel">
+
+<h2>Step 1 — 在 Prisma Schema 中新增以下内容</h2>
+<p class="copy-hint">文件路径：packages/database/prisma/schema.prisma，加到文件末尾（枚举之后）</p>
+
+<div class="code-block">model SavedReport {
+  id          String   @id @default(uuid())
+  name        String
+  isSystem    Boolean  @default(false) @map("is_system")
+  description String?
+  config      Json
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("saved_reports")
+  @@index([isSystem])
+  @@index([createdBy])
+}</div>
+
+<p class="copy-hint">在 AdPerformance model 的 @@index 区域，添加复合索引（提升报表查询性能）：</p>
+<div class="code-block">model AdPerformance {
+  <span class="cm">// ... 现有字段不变 ...</span>
+
+  @@map("ad_performance")
+  @@index([date])
+  @@index([level])
+  @@index([metaObjectId])
+  @@index([campaignId])
+  @@index([adSetId])
+  @@index([adId])
+  @@index([level, date])    <span class="cm">-- 新增：报表查询核心索引</span>
+  @@unique([level, metaObjectId, date, hour])
+}</div>
+
+<h2>Step 2 — 生成迁移并执行</h2>
+<div class="code-block">cd packages/database
+npx prisma migrate dev --name add_saved_reports_and_index</div>
+
+</div>
+
+<!-- ========== TAB 3: Backend ========== -->
+<div id="backend" class="tab-panel">
+
+<h2>新建文件：apps/api/src/routes/reports.ts</h2>
+<p class="copy-hint">完整代码，直接复制即可使用。已处理：白名单校验、动态 JOIN 推断、参数化防注入、CSV 导出。</p>
+
+<div class="code-block">import { Router, Request, Response } from 'express';
+import { prisma } from '@autoads/database';
+
+const router = Router();
+
+<span class="cm">// ==================== 白名单定义 ====================</span>
+const VALID_DIMENSIONS = ['date', 'campaign', 'adset', 'creative', 'country', 'audienceTemplate', 'radarType'];
+const VALID_METRICS = ['spend', 'conversions', 'clicks', 'impressions', 'ctr', 'cvr', 'cpc', 'cpm', 'frequency', 'cpa', 'epc', 'roas'];
+
+<span class="cm">// 维度定义：select 字段、group by 字段、依赖的 JOIN key</span>
+const DIM_DEFS: Record&lt;string, { selects: string[]; groupBys: string[]; joins: string[] }&gt; = {
+  date:            { selects: [`ap.date as "date"`],                                         groupBys: ['ap.date'],                                       joins: [] },
+  campaign:        { selects: [`ac.name as "campaign_name"`, `ap.campaign_id as "campaign_id"`], groupBys: ['ap.campaign_id', 'ac.name'],                     joins: ['campaigns'] },
+  adset:           { selects: [`a_s.name as "adset_name"`, `ap.adset_id as "adset_id"`],       groupBys: ['ap.adset_id', 'a_s.name'],                        joins: ['adsets'] },
+  creative:        { selects: [`c.name as "creative_name"`, `ad.creative_id as "creative_id"`, `c.file_url as "creative_file_url"`], groupBys: ['ad.creative_id', 'c.name', 'c.file_url'], joins: ['ads', 'creatives'] },
+  country:         { selects: [`a_s.country_code as "country_code"`],                         groupBys: ['a_s.country_code'],                                joins: ['adsets'] },
+  audienceTemplate:{ selects: [`a_s.audience_template as "audience_template"`],                 groupBys: ['a_s.audience_template'],                            joins: ['adsets'] },
+  radarType:       { selects: [`a_s.radar_type as "radar_type"`],                             groupBys: ['a_s.radar_type'],                                   joins: ['adsets'] },
+};
+
+<span class="cm">// JOIN 定义（key → SQL 片段）</span>
+const JOIN_DEFS: Record&lt;string, string&gt; = {
+  campaigns:  'LEFT JOIN ad_campaigns ac ON ap.campaign_id = ac.id',
+  adsets:     'LEFT JOIN ad_sets a_s ON ap.adset_id = a_s.id',
+  ads:        'LEFT JOIN ads ad ON ap.ad_id = ad.id',
+  creatives:  'LEFT JOIN creatives c ON ad.creative_id = c.id',
+  benchmarks: 'LEFT JOIN country_benchmarks cb ON a_s.country_code = cb.country_code',
+};
+
+<span class="cm">// 指标定义（key → SQL 表达式 + 额外 JOIN）</span>
+const METRIC_DEFS: Record&lt;string, { expr: string; joins?: string[] }&gt; = {
+  spend:        { expr: 'SUM(ap.spend) as "spend"' },
+  conversions:  { expr: 'SUM(ap.conversions) as "conversions"' },
+  clicks:       { expr: 'SUM(ap.clicks) as "clicks"' },
+  impressions:  { expr: 'SUM(ap.impressions) as "impressions"' },
+  ctr:          { expr: 'ROUND(SUM(ap.clicks)::numeric / NULLIF(SUM(ap.impressions), 0) * 100, 2) as "ctr"' },
+  cvr:          { expr: 'ROUND(SUM(ap.conversions)::numeric / NULLIF(SUM(ap.clicks), 0) * 100, 2) as "cvr"' },
+  cpc:          { expr: 'ROUND(SUM(ap.spend)::numeric / NULLIF(SUM(ap.clicks), 0), 2) as "cpc"' },
+  cpm:          { expr: 'ROUND(SUM(ap.spend)::numeric / NULLIF(SUM(ap.impressions), 0) * 1000, 2) as "cpm"' },
+  frequency:    { expr: 'ROUND(AVG(ap.frequency)::numeric, 2) as "frequency"' },
+  cpa:          { expr: 'ROUND(SUM(ap.spend)::numeric / NULLIF(SUM(ap.conversions), 0), 2) as "cpa"' },
+  epc:          { expr: 'ROUND(cb.payout * (SUM(ap.conversions)::numeric / NULLIF(SUM(ap.clicks), 0)), 4) as "epc"',     joins: ['benchmarks'] },
+  roas:         { expr: 'ROUND((cb.payout * SUM(ap.conversions))::numeric / NULLIF(SUM(ap.spend), 0) * 100, 2) as "roas"', joins: ['benchmarks'] },
+};
+
+<span class="cm">// JOIN 顺序（确保依赖正确：creatives 依赖 ads，benchmarks 依赖 adsets）</span>
+const JOIN_ORDER = ['campaigns', 'adsets', 'ads', 'creatives', 'benchmarks'];
+
+interface ReportQueryBody {
+  dimensions: string[];
+  metrics: string[];
+  filters?: {
+    dateFrom?: string;
+    dateTo?: string;
+    countryCodes?: string[];
+    campaignIds?: string[];
+    adSetIds?: string[];
+    creativeIds?: string[];
+    audienceTemplates?: string[];
+    radarTypes?: string[];
+  };
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+}
+
+<span class="cm">// ==================== 核心查询函数 ====================</span>
+async function executeQuery(body: ReportQueryBody) {
+  const dims = (body.dimensions || []).filter(d => VALID_DIMENSIONS.includes(d));
+  const metrics = (body.metrics || []).filter(m => VALID_METRICS.includes(m));
+
+  if (dims.length === 0) throw new Error('至少选择一个维度');
+  if (metrics.length === 0) throw new Error('至少选择一个指标');
+
+  <span class="cm">// EPC / ROAS 必须包含 country 维度（payout 按国家区分）</span>
+  if ((metrics.includes('epc') || metrics.includes('roas')) && !dims.includes('country')) {
+    throw new Error('EPC 和 ROAS 指标需要包含"国家"维度');
+  }
+
+  <span class="cm">// 收集所有需要的 JOIN</span>
+  const neededJoins = new Set&lt;string&gt;();
+  for (const d of dims) {
+    for (const j of DIM_DEFS[d].joins) neededJoins.add(j);
+  }
+  for (const m of metrics) {
+    const def = METRIC_DEFS[m];
+    if (def.joins) for (const j of def.joins) neededJoins.add(j);
+  }
+
+  <span class="cm">// 如果有过滤条件涉及特定字段，也加入对应 JOIN</span>
+  const f = body.filters || {};
+  if (f.campaignIds?.length) neededJoins.add('campaigns');
+  if (f.countryCodes?.length || f.adSetIds?.length || f.audienceTemplates?.length || f.radarTypes?.length) neededJoins.add('adsets');
+  if (f.creativeIds?.length) { neededJoins.add('ads'); neededJoins.add('creatives'); }
+
+  <span class="cm">// 按固定顺序构建 JOIN SQL</span>
+  const joinsSql = JOIN_ORDER.filter(j => neededJoins.has(j)).map(j => JOIN_DEFS[j]).join('\n  ');
+
+  <span class="cm">// 构建 SELECT</span>
+  const dimSelects = dims.flatMap(d => DIM_DEFS[d].select);
+  const metricSelects = metrics.map(m => METRIC_DEFS[m].expr);
+  const allSelects = [...dimSelects, ...metricSelects].join(',\n  ');
+
+  <span class="cm">// 构建 WHERE（参数化，防注入）</span>
+  const whereParts: string[] = ["ap.level = 'ad'"];
+  const params: (string | number | string[])[] = [];
+  let pIdx = 1;
+
+  const dateFrom = f.dateFrom || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const dateTo = f.dateTo || new Date().toISOString().slice(0, 10);
+  whereParts.push(`ap.date >= $${pIdx++}`); params.push(dateFrom);
+  whereParts.push(`ap.date <= $${pIdx++}`); params.push(dateTo);
+
+  const inFilter = (field: string, vals?: string[]) => {
+    if (!vals?.length) return;
+    const placeholders = vals.map(() => `$${pIdx++}`).join(',');
+    whereParts.push(`${field} IN (${placeholders})`);
+    params.push(...vals);
+  };
+
+  inFilter('a_s.country_code', f.countryCodes);
+  inFilter('ap.campaign_id', f.campaignIds);
+  inFilter('ap.adset_id', f.adSetIds);
+  inFilter('ad.creative_id', f.creativeIds);
+  inFilter('a_s.audience_template', f.audienceTemplates);
+  inFilter('a_s.radar_type', f.radarTypes);
+
+  const whereSql = whereParts.join('\n  AND ');
+
+  <span class="cm">// 构建 GROUP BY</span>
+  const groupBys = dims.flatMap(d => DIM_DEFS[d].groupBys);
+  <span class="cm">// EPC/ROAS 的 groupBy 需要包含 cb.payout（因为 SELECT 中用了非聚合列）</span>
+  if (metrics.includes('epc') || metrics.includes('roas')) {
+    if (!groupBys.includes('cb.payout')) groupBys.push('cb.payout');
+  }
+  const groupBySql = groupBys.join(', ');
+
+  <span class="cm">// 构建 ORDER BY</span>
+  const sortBy = body.sortBy;
+  const sortOrder = body.sortOrder === 'asc' ? 'ASC' : 'DESC';
+  let orderBySql: string;
+  if (sortBy && [...VALID_METRICS, ...VALID_DIMENSIONS].includes(sortBy)) {
+    orderBySql = `"${sortBy}" ${sortOrder}`;
+  } else if (dims.includes('date')) {
+    orderBySql = `ap.date DESC`;
+  } else {
+    orderBySql = `"spend" DESC`;
+  }
+
+  const limit = Math.min(body.limit || 50, 500);
+  const page = Math.max(body.page || 1, 1);
+  const offset = (page - 1) * limit;
+
+  <span class="cm">// 组装主查询 SQL</span>
+  const sql = `SELECT
+  ${allSelects}
+FROM ad_performance ap
+  ${joinsSql}
+WHERE ${whereSql}
+GROUP BY ${groupBySql}
+ORDER BY ${orderBySql}
+LIMIT $${pIdx++} OFFSET $${pIdx++}`;
+  params.push(limit, offset);
+
+  const data = await prisma.$queryRawUnsafe&lt;any[]&gt;(sql, ...params);
+
+  <span class="cm">// 统计总数（用于分页）</span>
+  const countSql = `SELECT COUNT(*) as "total" FROM (
+  SELECT 1
+  FROM ad_performance ap
+    ${joinsSql}
+  WHERE ${whereSql}
+  GROUP BY ${groupBySql}
+) t`;
+  const countResult = await prisma.$queryRawUnsafe&lt;{ total: bigint }[]&gt;(countSql, ...params.slice(0, -2));
+  const total = Number(countResult[0]?.total || 0);
+
+  return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+<span class="cm">// ==================== 路由定义 ====================</span>
+
+<span class="cm">// POST /api/reports/query — 动态查询</span>
+router.post('/query', async (req: Request, res: Response) => {
+  try {
+    const result = await executeQuery(req.body);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('Report query error:', err);
+    res.status(400).json({ success: false, error: err.message || '查询失败' });
+  }
+});
+
+<span class="cm">// GET /api/reports/export?... — CSV 导出</span>
+router.get('/export', async (req: Request, res: Response) => {
+  try {
+    const body: ReportQueryBody = {
+      dimensions: req.query.dimensions ? JSON.parse(req.query.dimensions as string) : [],
+      metrics: req.query.metrics ? JSON.parse(req.query.metrics as string) : [],
+      filters: req.query.filters ? JSON.parse(req.query.filters as string) : {},
+      sortBy: req.query.sortBy as string,
+      sortOrder: req.query.sortOrder as 'asc' | 'desc',
+      page: 1,
+      limit: 500,
+    };
+    const result = await executeQuery(body);
+
+    <span class="cm">// 生成 CSV（表头 + 数据行）</span>
+    const dims = body.dimensions || [];
+    const metrics = body.metrics || [];
+    const headers = [...dims, ...metrics];
+    const rows = result.data.map((row: any) =>
+      headers.map(h => {
+        const v = row[h];
+        if (v === null || v === undefined) return '';
+        const s = String(v);
+        <span class="cm">// 如果内容包含逗号/换行/引号，用引号包裹并转义</span>
+        if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      }).join(',')
+    );
+    const csv = [headers.join(','), ...rows].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="autoads-report-${Date.now()}.csv"`);
+    res.send('\uFEFF' + csv); <span class="cm">// BOM 让 Excel 正确识别 UTF-8</span>
+  } catch (err: any) {
+    console.error('Export error:', err);
+    res.status(400).json({ success: false, error: err.message || '导出失败' });
+  }
+});
+
+<span class="cm">// GET /api/reports/saved — 已保存报表列表</span>
+router.get('/saved', async (_req: Request, res: Response) => {
+  try {
+    const reports = await prisma.savedReport.findMany({
+      orderBy: [{ isSystem: 'desc' }, { createdAt: 'desc' }],
+    });
+    res.json({ success: true, data: reports });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+<span class="cm">// POST /api/reports/saved — 保存报表</span>
+router.post('/saved', async (req: Request, res: Response) => {
+  try {
+    const { name, description, config } = req.body;
+    if (!name || !config) throw new Error('name 和 config 为必填项');
+    const report = await prisma.savedReport.create({
+      data: { name, description, config },
+    });
+    res.json({ success: true, data: report });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+<span class="cm">// DELETE /api/reports/saved/:id — 删除自定义报表</span>
+router.delete('/saved/:id', async (req: Request, res: Response) => {
+  try {
+    const report = await prisma.savedReport.findUnique({ where: { id: req.params.id } });
+    if (!report) throw new Error('报表不存在');
+    if (report.isSystem) throw new Error('系统预置报表不可删除');
+    await prisma.savedReport.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+<span class="cm">// GET /api/reports/meta — 返回维度/指标元数据（供前端渲染选择器）</span>
+router.get('/meta', async (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    data: {
+      dimensions: [
+        { key: 'date', label: '日期', requires: [] },
+        { key: 'campaign', label: '广告活动', requires: [] },
+        { key: 'adset', label: '广告组', requires: [] },
+        { key: 'creative', label: '素材', requires: [] },
+        { key: 'country', label: '国家', requires: [] },
+        { key: 'audienceTemplate', label: '受众模板', requires: [] },
+        { key: 'radarType', label: '广告组类型', requires: [] },
+      ],
+      metrics: [
+        { key: 'spend', label: '花费', unit: 'USD' },
+        { key: 'conversions', label: '转化数' },
+        { key: 'clicks', label: '点击数' },
+        { key: 'impressions', label: '展示数' },
+        { key: 'ctr', label: 'CTR', unit: '%' },
+        { key: 'cvr', label: 'CVR', unit: '%' },
+        { key: 'cpc', label: 'CPC', unit: 'USD' },
+        { key: 'cpm', label: 'CPM', unit: 'USD' },
+        { key: 'frequency', label: '频次' },
+        { key: 'cpa', label: 'CPA', unit: 'USD' },
+        { key: 'epc', label: 'EPC', unit: 'USD', requiresDimension: 'country' },
+        { key: 'roas', label: 'ROAS', unit: '%', requiresDimension: 'country' },
+      ],
+    },
+  });
+});
+
+export default router;</div>
+
+<h2>在 app.ts 中注册路由</h2>
+<p class="copy-hint">找到 apps/api/src/app.ts（或你的入口文件），添加一行：</p>
+<div class="code-block">import reportsRouter from './routes/reports';
+
+<span class="cm">// ... 其他路由注册 ...</span>
+app.use('/api/reports', reportsRouter);</div>
+
+</div>
+
+<!-- ========== TAB 4: Frontend ========== -->
+<div id="frontend" class="tab-panel">
+
+<h2>新建文件：apps/web/src/pages/Reports.tsx</h2>
+<p class="copy-hint">完整前端页面，使用 Ant Design 组件。包含：维度/指标选择、筛选条件、表格展示、保存报表、导出 CSV。</p>
+
+<div class="code-block">import { useState, useEffect, useCallback } from 'react';
+import {
+  Card, Button, Table, Tag, Space, message, Row, Col,
+  Select, Checkbox, Typography, Empty, Tooltip, Popconfirm,
+} from 'antd';
+import { DownloadOutlined, SaveOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import axios from 'axios';
+import dayjs from 'dayjs';
+import DateRangePicker from '../components/DateRangePicker';
+
+const { Title, Text } = Typography;
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+
+interface SavedReport {
+  id: string;
+  name: string;
+  isSystem: boolean;
+  description?: string;
+  config: {
+    dimensions: string[];
+    metrics: string[];
+    filters?: any;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  };
+}
+
+const DIM_LABELS: Record&lt;string, string&gt; = {
+  date: '日期', campaign: '广告活动', adset: '广告组', creative: '素材',
+  country: '国家', audienceTemplate: '受众模板', radarType: '广告组类型',
+};
+
+const METRIC_LABELS: Record&lt;string, string&gt; = {
+  spend: '花费', conversions: '转化数', clicks: '点击数', impressions: '展示数',
+  ctr: 'CTR', cvr: 'CVR', cpc: 'CPC', cpm: 'CPM',
+  frequency: '频次', cpa: 'CPA', epc: 'EPC', roas: 'ROAS',
+};
+
+export default function ReportsPage() {
+  const [dimensions, setDimensions] = useState&lt;string[]&gt;(['date', 'country']);
+  const [metrics, setMetrics] = useState&lt;string[]&gt;(['spend', 'conversions', 'cvr', 'cpc']);
+  const [dateRange, setDateRange] = useState&lt;[dayjs.Dayjs, dayjs.Dayjs]&gt;([dayjs().subtract(6, 'day'), dayjs()]);
+  const [filters, setFilters] = useState&lt;Record&lt;string, any&gt;&gt;({});
+  const [sortBy, setSortBy] = useState&lt;string&gt;('date');
+  const [sortOrder, setSortOrder] = useState&lt;'asc' | 'desc'&gt;('desc');
+
+  const [data, setData] = useState&lt;any[]&gt;([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(50);
+  const [loading, setLoading] = useState(false);
+
+  const [savedReports, setSavedReports] = useState&lt;SavedReport[]&gt;([]);
+  const [saveName, setSaveName] = useState('');
+  const [meta, setMeta] = useState&lt;{ dimensions: any[]; metrics: any[] } | null&gt;(null);
+
+  <span class="cm">// 加载元数据和已保存报表</span>
+  useEffect(() => {
+    axios.get(`${API_BASE}/reports/meta`).then(r => setMeta(r.data.data));
+    loadSavedReports();
+  }, []);
+
+  const loadSavedReports = () => {
+    axios.get(`${API_BASE}/reports/saved`).then(r => setSavedReports(r.data.data || []));
+  };
+
+  <span class="cm">// 执行查询</span>
+  const handleQuery = useCallback(async (targetPage = 1) => {
+    if (dimensions.length === 0) { message.warning('请至少选择一个维度'); return; }
+    if (metrics.length === 0) { message.warning('请至少选择一个指标'); return; }
+
+    <span class="cm">// EPC/ROAS 校验</span>
+    if ((metrics.includes('epc') || metrics.includes('roas')) && !dimensions.includes('country')) {
+      message.warning('选择 EPC 或 ROAS 时必须同时选择"国家"维度');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_BASE}/reports/query`, {
+        dimensions,
+        metrics,
+        filters: {
+          dateFrom: dateRange[0].format('YYYY-MM-DD'),
+          dateTo: dateRange[1].format('YYYY-MM-DD'),
+          ...filters,
+        },
+        sortBy,
+        sortOrder,
+        page: targetPage,
+        limit,
+      });
+      setData(res.data.data || []);
+      setTotal(res.data.total || 0);
+      setPage(targetPage);
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '查询失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [dimensions, metrics, dateRange, filters, sortBy, sortOrder, limit]);
+
+  <span class="cm">// 导出 CSV</span>
+  const handleExport = () => {
+    const params = new URLSearchParams({
+      dimensions: JSON.stringify(dimensions),
+      metrics: JSON.stringify(metrics),
+      filters: JSON.stringify({
+        dateFrom: dateRange[0].format('YYYY-MM-DD'),
+        dateTo: dateRange[1].format('YYYY-MM-DD'),
+        ...filters,
+      }),
+      sortBy,
+      sortOrder,
+    });
+    window.open(`${API_BASE}/reports/export?${params.toString()}`, '_blank');
+  };
+
+  <span class="cm">// 保存报表</span>
+  const handleSave = async () => {
+    if (!saveName.trim()) { message.warning('请输入报表名称'); return; }
+    try {
+      await axios.post(`${API_BASE}/reports/saved`, {
+        name: saveName.trim(),
+        config: { dimensions, metrics, filters, sortBy, sortOrder },
+      });
+      message.success('保存成功');
+      setSaveName('');
+      loadSavedReports();
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '保存失败');
+    }
+  };
+
+  <span class="cm">// 加载已保存报表</span>
+  const loadReport = (report: SavedReport) => {
+    const c = report.config;
+    setDimensions(c.dimensions);
+    setMetrics(c.metrics);
+    if (c.filters?.dateFrom && c.filters?.dateTo) {
+      setDateRange([dayjs(c.filters.dateFrom), dayjs(c.filters.dateTo)]);
+    }
+    setFilters(c.filters || {});
+    setSortBy(c.sortBy || 'date');
+    setSortOrder(c.sortOrder || 'desc');
+    message.success(`已加载「${report.name}」`);
+    <span class="cm">// 延迟查询，等状态更新</span>
+    setTimeout(() => handleQuery(1), 100);
+  };
+
+  <span class="cm">// 删除自定义报表</span>
+  const deleteReport = async (id: string) => {
+    try {
+      await axios.delete(`${API_BASE}/reports/saved/${id}`);
+      message.success('删除成功');
+      loadSavedReports();
+    } catch (err: any) {
+      message.error(err.response?.data?.error || '删除失败');
+    }
+  };
+
+  <span class="cm">// 构建表格列</span>
+  const columns = [
+    ...dimensions.map(d => ({
+      title: DIM_LABELS[d] || d,
+      dataIndex: d === 'campaign' ? 'campaign_name'
+        : d === 'adset' ? 'adset_name'
+        : d === 'creative' ? 'creative_name'
+        : d,
+      key: d,
+      fixed: d === 'date' ? 'left' : undefined,
+      render: (val: any, record: any) => {
+        if (d === 'creative' && record.creative_file_url) {
+          return (
+            &lt;Space&gt;
+              {val || '未命名'}
+              &lt;a href={record.creative_file_url} target="_blank" rel="noreferrer"&gt;预览&lt;/a&gt;
+            &lt;/Space&gt;
+          );
+        }
+        if (d === 'date' && val) return dayjs(val).format('MM-DD');
+        return val || '-';
+      },
+    })),
+    ...metrics.map(m => ({
+      title: METRIC_LABELS[m] || m,
+      dataIndex: m,
+      key: m,
+      align: 'right' as const,
+      render: (val: any) => {
+        if (val === null || val === undefined) return '-';
+        if (m === 'roas') {
+          const color = val >= 100 ? '#52c41a' : val >= 80 ? '#faad14' : '#f5222d';
+          return &lt;span style={{ color, fontWeight: 600 }}&gt;{val}%&lt;/span&gt;;
+        }
+        if (['spend', 'cpc', 'cpm', 'cpa', 'epc'].includes(m)) {
+          return `$${Number(val).toFixed(2)}`;
+        }
+        if (['ctr', 'cvr'].includes(m)) return `${val}%`;
+        return Number(val).toLocaleString();
+      },
+    })),
+  ];
+
+  const availableDims = meta?.dimensions || [];
+  const availableMetrics = meta?.metrics || [];
+
+  return (
+    &lt;div style={{ padding: 24 }}&gt;
+      &lt;Title level={4}&gt;数据分析 — 动态报表&lt;/Title&gt;
+
+      &lt;Row gutter={[16, 16]}&gt;
+        <span class="cm">{/* 左侧：已保存报表 */}</span>
+        &lt;Col span={5}&gt;
+          &lt;Card title="报表模板" size="small" bodyStyle={{ padding: 12 }}&gt;
+            &lt;Space direction="vertical" style={{ width: '100%' }} size={8}&gt;
+              {savedReports.map(r => (
+                &lt;div key={r.id} style={{
+                  padding: '8px 10px', borderRadius: 6, background: r.isSystem ? '#f0f9ff' : '#f6ffed',
+                  border: '1px solid ' + (r.isSystem ? '#bae0ff' : '#b7eb8f'),
+                  cursor: 'pointer',
+                }} onClick={() => loadReport(r)}&gt;
+                  &lt;div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}&gt;
+                    &lt;Text strong style={{ fontSize: 13 }}&gt;{r.name}&lt;/Text&gt;
+                    {!r.isSystem && (
+                      &lt;Popconfirm title="确定删除？" onConfirm={(e) => { e?.stopPropagation(); deleteReport(r.id); }}&gt;
+                        &lt;DeleteOutlined style={{ color: '#999', fontSize: 12 }} onClick={e => e.stopPropagation()} /&gt;
+                      &lt;/Popconfirm&gt;
+                    )}
+                  &lt;/div&gt;
+                  {r.description && &lt;Text type="secondary" style={{ fontSize: 11 }}&gt;{r.description}&lt;/Text&gt;}
+                &lt;/div&gt;
+              ))}
+            &lt;/Space&gt;
+          &lt;/Card&gt;
+        &lt;/Col&gt;
+
+        <span class="cm">{/* 右侧：查询配置 + 结果 */}</span>
+        &lt;Col span={19}&gt;
+          &lt;Card size="small" style={{ marginBottom: 16 }}&gt;
+            &lt;Row gutter={[16, 12]}&gt;
+              &lt;Col span={24}&gt;
+                &lt;Text type="secondary" style={{ fontSize: 12 }}&gt;维度（GROUP BY）：&lt;/Text&gt;
+                &lt;Checkbox.Group
+                  options={availableDims.map(d => ({ label: d.label, value: d.key }))}
+                  value={dimensions}
+                  onChange={(v: string[]) => setDimensions(v)}
+                  style={{ marginLeft: 8 }}
+                /&gt;
+              &lt;/Col&gt;
+              &lt;Col span={24}&gt;
+                &lt;Text type="secondary" style={{ fontSize: 12 }}&gt;指标：&lt;/Text&gt;
+                &lt;Checkbox.Group
+                  options={availableMetrics.map(m => ({
+                    label: m.requiresDimension
+                      ? &lt;Tooltip title={`需包含「${DIM_LABELS[m.requiresDimension]}」维度`}&gt;{m.label}&lt;/Tooltip&gt;
+                      : m.label,
+                    value: m.key,
+                    disabled: m.requiresDimension ? !dimensions.includes(m.requiresDimension) : false,
+                  }))}
+                  value={metrics}
+                  onChange={(v: string[]) => setMetrics(v)}
+                  style={{ marginLeft: 8 }}
+                /&gt;
+              &lt;/Col&gt;
+              &lt;Col span={8}&gt;
+                &lt;DateRangePicker value={dateRange} onChange={setDateRange} /&gt;
+              &lt;/Col&gt;
+              &lt;Col span={16}&gt;
+                &lt;Space&gt;
+                  &lt;Select
+                    placeholder="排序字段"
+                    value={sortBy}
+                    onChange={setSortBy}
+                    style={{ width: 140 }}
+                    options={[...dimensions, ...metrics].map(k => ({
+                      label: DIM_LABELS[k] || METRIC_LABELS[k] || k,
+                      value: k,
+                    }))}
+                  /&gt;
+                  &lt;Select
+                    value={sortOrder}
+                    onChange={setSortOrder}
+                    style={{ width: 100 }}
+                    options={[{ label: '降序', value: 'desc' }, { label: '升序', value: 'asc' }]}
+                  /&gt;
+                  &lt;Button type="primary" icon={&lt;ReloadOutlined /&gt;} onClick={() => handleQuery(1)} loading={loading}&gt;查询&lt;/Button&gt;
+                  &lt;Button icon={&lt;DownloadOutlined /&gt;} onClick={handleExport}&gt;导出 CSV&lt;/Button&gt;
+                &lt;/Space&gt;
+              &lt;/Col&gt;
+            &lt;/Row&gt;
+
+            &lt;div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}&gt;
+              &lt;Text type="secondary" style={{ fontSize: 12 }}&gt;保存当前配置：&lt;/Text&gt;
+              &lt;input
+                placeholder="报表名称"
+                value={saveName}
+                onChange={e => setSaveName(e.target.value)}
+                style={{ width: 200, padding: '4px 8px', border: '1px solid #d9d9d9', borderRadius: 4 }}
+              /&gt;
+              &lt;Button icon={&lt;SaveOutlined /&gt;} size="small" onClick={handleSave}&gt;保存&lt;/Button&gt;
+            &lt;/div&gt;
+          &lt;/Card&gt;
+
+          &lt;Table
+            columns={columns}
+            dataSource={data.map((d, i) => ({ ...d, key: i }))}
+            loading={loading}
+            pagination={{
+              current: page,
+              pageSize: limit,
+              total,
+              showSizeChanger: false,
+              showTotal: t => `共 ${t} 条`,
+              onChange: p => handleQuery(p),
+            }}
+            scroll={{ x: 'max-content' }}
+            size="small"
+            locale={{ emptyText: &lt;Empty description="请选择维度/指标并点击查询" /&gt; }}
+          /&gt;
+        &lt;/Col&gt;
+      &lt;/Row&gt;
+    &lt;/div&gt;
+  );
+}</div>
+
+<h2>添加前端路由</h2>
+<p class="copy-hint">在 apps/web/src/App.tsx（或你的路由文件）中添加：</p>
+<div class="code-block">import ReportsPage from './pages/Reports';
+
+<span class="cm">// ... 在路由配置中 ...</span>
+&lt;Route path="/reports" element={&lt;ReportsPage /&gt;} /&gt;</div>
+
+<h2>在导航菜单中添加入口</h2>
+<p class="copy-hint">找到侧边栏/导航组件，在「数据分析」同级添加：</p>
+<div class="code-block">{
+  key: '/reports',
+  icon: &lt;BarChartOutlined /&gt;,
+  label: '自定义报表',
+}</div>
+
+</div>
+
+<!-- ========== TAB 5: Seed ========== -->
+<div id="seed" class="tab-panel">
+
+<h2>Step 1 — 系统默认报表 Seed 脚本</h2>
+<p class="copy-hint">新建 apps/api/src/scripts/seedReports.ts，执行一次即可。</p>
+
+<div class="code-block">import { prisma } from '@autoads/database';
+
+async function main() {
+  const exists = await prisma.savedReport.findFirst({ where: { isSystem: true } });
+  if (exists) {
+    console.log('系统默认报表已存在，跳过');
+    await prisma.$disconnect();
+    return;
+  }
+
+  await prisma.savedReport.createMany({
+    data: [
+      {
+        name: '国家日报',
+        isSystem: true,
+        description: '每天必看，各国盈亏状态一览',
+        config: {
+          dimensions: ['date', 'country'],
+          metrics: ['spend', 'conversions', 'clicks', 'impressions', 'ctr', 'cvr', 'cpc', 'cpa'],
+          filters: {},
+          sortBy: 'date',
+          sortOrder: 'desc',
+        },
+      },
+      {
+        name: '素材效果排行',
+        isSystem: true,
+        description: '找出头部素材，驱动迭代决策',
+        config: {
+          dimensions: ['creative', 'country'],
+          metrics: ['spend', 'conversions', 'clicks', 'impressions', 'ctr', 'cvr', 'cpc', 'frequency'],
+          filters: {},
+          sortBy: 'conversions',
+          sortOrder: 'desc',
+        },
+      },
+      {
+        name: '广告活动总览',
+        isSystem: true,
+        description: 'Campaign 级整体表现',
+        config: {
+          dimensions: ['campaign', 'country'],
+          metrics: ['spend', 'conversions', 'clicks', 'impressions', 'ctr', 'cvr', 'cpc', 'cpa'],
+          filters: {},
+          sortBy: 'spend',
+          sortOrder: 'desc',
+        },
+      },
+      {
+        name: '受众模板对比',
+        isSystem: true,
+        description: '对比不同受众策略的 ROAS 差异',
+        config: {
+          dimensions: ['audienceTemplate', 'country'],
+          metrics: ['spend', 'conversions', 'clicks', 'cvr', 'cpc'],
+          filters: {},
+          sortBy: 'cvr',
+          sortOrder: 'desc',
+        },
+      },
+      {
+        name: '国家雷达监控',
+        isSystem: true,
+        description: 'M7 监测组 vs 跑量组表现对比',
+        config: {
+          dimensions: ['radarType', 'country', 'date'],
+          metrics: ['spend', 'conversions', 'clicks', 'cvr', 'cpc'],
+          filters: { radarTypes: ['monitor', 'scaling'] },
+          sortBy: 'date',
+          sortOrder: 'desc',
+        },
+      },
+    ],
+  });
+
+  console.log('✅ 已创建 5 个系统默认报表');
+  await prisma.$disconnect();
+}
+
+main().catch(e => { console.error(e); process.exit(1); });</div>
+
+<p class="copy-hint">执行 seed：</p>
+<div class="code-block">cd apps/api && npx tsx src/scripts/seedReports.ts</div>
+
+<h2>Step 2 — 部署检查清单</h2>
+<div class="step-list">
+  <div class="step-item"><div class="step-num">1</div><div class="step-text">在 packages/database/prisma/schema.prisma 中新增 SavedReport model 和 AdPerformance 复合索引</div></div>
+  <div class="step-item"><div class="step-num">2</div><div class="step-text">运行 <code>npx prisma migrate dev --name add_saved_reports_and_index</code> 生成迁移</div></div>
+  <div class="step-item"><div class="step-num">3</div><div class="step-text">将 reports.ts 保存到 apps/api/src/routes/reports.ts</div></div>
+  <div class="step-item"><div class="step-num">4</div><div class="step-text">在 app.ts 中添加 <code>app.use('/api/reports', reportsRouter)</code></div></div>
+  <div class="step-item"><div class="step-num">5</div><div class="step-text">将 Reports.tsx 保存到 apps/web/src/pages/Reports.tsx</div></div>
+  <div class="step-item"><div class="step-num">6</div><div class="step-text">在前端路由中添加 /reports 路径</div></div>
+  <div class="step-item"><div class="step-num">7</div><div class="step-text">在导航菜单中添加「自定义报表」入口</div></div>
+  <div class="step-item"><div class="step-num">8</div><div class="step-text">执行 seed 脚本插入 5 个默认报表</div></div>
+  <div class="step-item"><div class="step-num">9</div><div class="step-text">重启后端服务，访问 /reports 验证</div></div>
+</div>
+
+<h2>已知限制与后续优化方向</h2>
+<div class="insight-box ib-warn">
+<div class="ib-title">当前版本的已知限制</div>
+1. <strong>投放人维度</strong>：当前 ad_campaigns 表没有 created_by/operator 字段和 users 表关联，如需此维度需先补字段。<br>
+2. <strong>活跃广告数</strong>：该指标需要实时统计 ads.status='active'，不是 performance 历史聚合，暂未纳入。<br>
+3. <strong>数据量</strong>：统一使用 level='ad' 的最细粒度数据，如 ad 级数据量极大（日数十万条），建议在 AdPerformance 上再加 (level, date, adset_id) 复合索引。<br>
+4. <strong>图表</strong>：当前只有表格，后续可按维度自动生成为趋势图/柱状图。
+</div>
+
+</div>
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

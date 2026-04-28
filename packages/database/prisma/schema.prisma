@@ -1,5 +1,5 @@
 // AutoAds Platform - Database Schema
-// 基于 PRD v2.0 设计
+// 基于 PRD v2.0 设计 + 多用户 RBAC + 审计日志
 
 generator client {
   provider = "prisma-client-js"
@@ -10,6 +10,113 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ==================== 用户与权限 ====================
+
+enum UserRole {
+  admin     // 管理员: 用户管理, 全局设置, 审计查看
+  optimizer // 优化师: Meta API 绑定, Campaign 推送, 自动化规则
+  designer  // 设计师: 素材上传/管理, 素材消耗数据查阅
+}
+
+model User {
+  id              String   @id @default(uuid())
+  username        String   @unique
+  email           String   @unique
+  passwordHash    String   @map("password_hash")   // bcrypt hashed
+  displayName     String   @map("display_name")
+  role            UserRole @default(optimizer)
+  isActive        Boolean  @default(true) @map("is_active")
+  avatar          String?
+
+  // 会话管理
+  lastLoginAt     DateTime? @map("last_login_at")
+  lastLoginIp     String?   @map("last_login_ip")
+
+  // 个人化 Meta API 凭据 (一对多)
+  metaCredentials MetaCredential[]
+
+  // 拥有的资源
+  creatives       Creative[]
+  campaigns       AdCampaign[]
+  automationRules AutomationRule[]
+  savedReports    SavedReport[]
+
+  // 审计日志
+  auditLogs       AuditLog[]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+  @@index([role])
+  @@index([isActive])
+}
+
+// 个人化 Meta API 凭据 (AES-256 加密存储，一人可有多条)
+model MetaCredential {
+  id              String   @id @default(uuid())
+
+  userId          String   @map("user_id")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  alias           String   @default("默认账户")            // 账户别名
+  isDefault       Boolean  @default(true) @map("is_default") // 默认账户标记
+
+  // 以下字段全部 AES-256 加密存储
+  metaAppId       String?  @map("meta_app_id")        // 加密
+  metaAppSecret   String?  @map("meta_app_secret")    // 加密
+  metaAccessToken String?  @map("meta_access_token")  // 加密
+  metaAdAccountId String?  @map("meta_ad_account_id") // 加密
+  metaPageId      String?  @map("meta_page_id")       // 加密
+
+  // Token 来源与有效性追踪
+  tokenSource     String    @default("unknown") @map("token_source") // user_token, system_user_token, unknown
+  tokenExpiresAt  DateTime? @map("token_expires_at")
+  tokenStatus     String    @default("unknown") @map("token_status") // valid, expired, invalid, unknown
+  lastVerifiedAt  DateTime? @map("last_verified_at")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, alias])
+  @@index([userId])
+  @@map("meta_credentials")
+}
+
+// 审计日志
+model AuditLog {
+  id              String   @id @default(uuid())
+
+  // 操作人
+  userId          String?  @map("user_id")
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // 操作信息
+  action          String    // create, update, delete, activate, deactivate, push_meta, execute_rule, login, logout ...
+  resourceType    String    @map("resource_type")    // campaign, adset, ad, creative, rule, user, meta_credential ...
+  resourceId      String?   @map("resource_id")      // 操作对象 ID
+  resourceName    String?   @map("resource_name")    // 操作对象名称 (快照)
+
+  // 详情
+  details         Json?     // 操作前后数据变化 { before: {...}, after: {...} }
+  result          String    @default("success") // success, failed, denied
+  errorMessage    String?   @map("error_message")
+
+  // 风险等级
+  severity        String    @default("info") // info, warning, critical
+  ipAddress       String?   @map("ip_address")
+  userAgent       String?   @map("user_agent")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType])
+  @@index([severity])
+  @@index([createdAt])
+}
+
 // ==================== 核心表 ====================
 
 // M1: 素材库 - 素材表
@@ -17,6 +124,10 @@ model Creative {
   id              String   @id @default(uuid())
   metaCreativeId  String?  @unique @map("meta_creative_id") // Meta API 返回的创意ID
   name            String
+  
+  // 所有权
+  ownerId         String?  @map("owner_id")
+  owner           User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   
   // 素材类型 (image, video, carousel)
   type            CreativeType
@@ -48,6 +159,8 @@ model Creative {
   variations      CreativeVariation[]
   
   // 元数据
+  designer        String?  // 设计师姓名
+  country         String?  // 投放国家/语言代码
   tags            String[] // 标签
   labels          String[] // 标签分类
   
@@ -60,6 +173,7 @@ model Creative {
   @@index([status])
   @@index([score])
   @@index([type])
+  @@index([ownerId])
 }
 
 // M1: 素材变体 (用于 M5 文案迭代)
@@ -98,8 +212,13 @@ model AdCampaign {
   id              String   @id @default(uuid())
   metaCampaignId  String?  @unique @map("meta_campaign_id")
   
+  // 所有权
+  ownerId         String?  @map("owner_id")
+  owner           User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  
   // 基本信息
   name            String
+  alias           String?  // 自定义标签（优化师姓名等），用于命名规则
   objective       String   // 广告目标 (CONVERSIONS, TRAFFIC, etc.)
   status          CampaignStatus @default(draft)
   
@@ -130,6 +249,7 @@ model AdCampaign {
   @@map("ad_campaigns")
   @@index([status])
   @@index([adAccountId])
+  @@index([ownerId])
 }
 
 // 广告组表 (AdSet)
@@ -260,6 +380,7 @@ model AdPerformance {
   @@map("ad_performance")
   @@index([date])
   @@index([level])
+  @@index([level, date])
   @@index([metaObjectId])
   @@index([campaignId])
   @@index([adSetId])
@@ -273,6 +394,10 @@ model AutomationRule {
   
   name            String
   description     String?
+  
+  // 所有权
+  ownerId         String?  @map("owner_id")
+  owner           User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   
   // 规则状态
   status          RuleStatus @default(draft)
@@ -311,6 +436,7 @@ model AutomationRule {
   @@index([status])
   @@index([ruleType])
   @@index([isActive])
+  @@index([ownerId])
 }
 
 // 规则执行日志
@@ -430,6 +556,80 @@ model ScheduledJob {
   updatedAt       DateTime @updatedAt @map("updated_at")
   
   @@map("scheduled_jobs")
+}
+
+// 动态报表引擎 — 保存的报表模板
+model SavedReport {
+  id          String   @id @default(uuid())
+  name        String
+  isSystem    Boolean  @default(false) @map("is_system")
+  description String?
+  config      Json
+  createdBy   String?  @map("created_by")
+  owner       User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@map("saved_reports")
+  @@index([isSystem])
+  @@index([createdBy])
+}
+
+// ==================== 国家文案库 ====================
+// 按国家保存常用文案，创建广告时可直接选用
+model CountryCopy {
+  id              String   @id @default(uuid())
+  
+  // 国家代码
+  countryCode     String   @map("country_code")
+  countryName     String   @map("country_name")
+  
+  // 文案内容
+  name            String   // 文案名称（便于识别）
+  primaryText     String   @map("primary_text") // 广告正文
+  headline        String   // 标题
+  description     String?  // 描述（可选）
+  ctaType         String   @default("LEARN_MORE") @map("cta_type") // CTA类型
+  
+  // 使用统计
+  useCount        Int      @default(0) @map("use_count") // 使用次数
+  totalSpend      Float    @default(0) @map("total_spend") // 累计消耗
+  totalConversions Int     @default(0) @map("total_conversions") // 累计转化
+  avgCpa          Float?   @map("avg_cpa") // 平均CPA
+  
+  // 状态
+  isActive        Boolean  @default(true) @map("is_active")
+  isDefault       Boolean  @default(false) @map("is_default") // 是否默认文案
+  
+  // 标签/分类
+  tags            String[] // 标签，如 ["高转化", "测试通过"]
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  
+  @@map("country_copies")
+  @@index([countryCode])
+  @@index([isActive])
+  @@index([isDefault])
+}
+
+// ==================== 国家基准配置 ====================
+model CountryBenchmark {
+  id              String   @id @default(uuid())
+  countryCode     String   @unique @map("country_code")
+  countryName     String   @map("country_name")
+  payout          Float    // 单价 (USD)
+  breakEvenCvr    Float    @map("break_even_cvr") // 盈利线CVR
+  targetCvr       Float    @map("target_cvr") // 理想CVR
+  ctrThreshold    Float    @map("ctr_threshold") // CTR警戒线
+  cpcCeiling      Float    @map("cpc_ceiling") // CPC上限
+  roasBuffer      Float    @default(0.9) @map("roas_buffer") // ROAS缓冲系数
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("country_benchmarks")
 }
 
 // ==================== 枚举类型 ====================
